@@ -1,20 +1,46 @@
 {
-  description = "A Nix-flake-based Zig development environment";
+  description = "An empty project that uses Zig.";
 
-  inputs.nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/0.1.*.tar.gz";
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-23.05";
+    flake-utils.url = "github:numtide/flake-utils";
+    zig.url = "github:mitchellh/zig-overlay";
 
-  outputs = { self, nixpkgs }:
-    let
-      supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
-      forEachSupportedSystem = f: nixpkgs.lib.genAttrs supportedSystems (system: f {
-        pkgs = import nixpkgs { inherit system; };
-      });
-    in
-    {
-      devShells = forEachSupportedSystem ({ pkgs }: {
-        default = pkgs.mkShell {
-          packages = with pkgs; [ zig zls lldb ];
-        };
-      });
+    # Used for shell.nix
+    flake-compat = {
+      url = "github:edolstra/flake-compat";
+      flake = false;
     };
+  };
+
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+    ...
+  } @ inputs: let
+    overlays = [
+      # Other overlays
+      (final: prev: {
+        zigpkgs = inputs.zig.packages.${prev.system};
+      })
+    ];
+
+    # Our supported systems are the same supported systems as the Zig binaries
+    systems = builtins.attrNames inputs.zig.packages;
+  in
+    flake-utils.lib.eachSystem systems (
+      system: let
+        pkgs = import nixpkgs {inherit overlays system;};
+      in rec {
+        devShells.default = pkgs.mkShell {
+          nativeBuildInputs = with pkgs; [
+            zigpkgs.master
+          ];
+        };
+
+        # For compatibility with older versions of the `nix` binary
+        devShell = self.devShells.${system}.default;
+      }
+    );
 }
